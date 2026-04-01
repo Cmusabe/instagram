@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 Script om automatisch alle pending follow requests op Instagram te annuleren.
 Gebruik dit script op eigen risico. Instagram kan rate limiting toepassen.
@@ -11,6 +12,7 @@ import time
 import random
 import json
 import os
+import sys
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
@@ -24,7 +26,14 @@ from webdriver_manager.chrome import ChromeDriverManager
 from datetime import datetime
 
 class InstagramCancelRequests:
-    def __init__(self, usernames_file='pending_usernames.txt', delay=3):
+    def __init__(
+        self,
+        usernames_file='pending_usernames.txt',
+        delay=3,
+        non_interactive=False,
+        login_username=None,
+        login_password=None
+    ):
         """
         Args:
             usernames_file: Pad naar het bestand met gebruikersnamen (één per regel)
@@ -38,6 +47,9 @@ class InstagramCancelRequests:
         self.failed_usernames = []
         self.progress_file = 'progress.json'
         self.completed_usernames = set()
+        self.non_interactive = non_interactive
+        self.login_username = login_username
+        self.login_password = login_password
         self.load_progress()
         # Veilige snelheidsprofiel (kan later aangepast worden)
         self.min_delay = 1.0
@@ -106,9 +118,22 @@ class InstagramCancelRequests:
         # chrome_options.add_argument('--headless')
         chrome_options.add_argument('--disable-blink-features=AutomationControlled')
         chrome_options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
-        
-        service = Service(ChromeDriverManager().install())
-        self.driver = webdriver.Chrome(service=service, options=chrome_options)
+
+        if os.getenv("HEADLESS", "").strip().lower() in ("1", "true", "yes", "y"):
+            chrome_options.add_argument('--headless=new')
+            chrome_options.add_argument('--no-sandbox')
+            chrome_options.add_argument('--disable-dev-shm-usage')
+
+        remote_url = os.getenv("SELENIUM_REMOTE_URL", "").strip()
+        if remote_url:
+            print(f"[INFO] Gebruik remote Selenium op: {remote_url}")
+            self.driver = webdriver.Remote(
+                command_executor=remote_url,
+                options=chrome_options
+            )
+        else:
+            service = Service(ChromeDriverManager().install())
+            self.driver = webdriver.Chrome(service=service, options=chrome_options)
         self.driver.implicitly_wait(5)
     
     def animate_click(self, element, button_name="knop"):
@@ -1322,7 +1347,8 @@ class InstagramCancelRequests:
             print(f"[INFO] Totaal gefaald: {self.failed_count}")
             return
         
-        input("Druk op Enter om te beginnen (zorg dat je ingelogd bent)...")
+        if not self.non_interactive:
+            input("Druk op Enter om te beginnen (zorg dat je ingelogd bent)...")
         
         start_time = time.time()
         processed_count = 0
@@ -1347,8 +1373,18 @@ class InstagramCancelRequests:
                     print("[INFO] Voortgang is opgeslagen. Start het script opnieuw om te hervatten.")
                     break
                 # Na reconnect moet je opnieuw inloggen
-                print("[INFO] Je moet opnieuw inloggen. Script pauzeert...")
-                input("Druk op Enter nadat je opnieuw bent ingelogd in de browser...")
+                if self.non_interactive:
+                    if self.login_username and self.login_password:
+                        print("[INFO] Probeer automatisch opnieuw in te loggen na reconnect...")
+                        if not self.login(self.login_username, self.login_password):
+                            print("[ERROR] Automatisch herinloggen na reconnect gefaald. Script stopt.")
+                            break
+                    else:
+                        print("[ERROR] Reconnect vereist login, maar geen credentials in non-interactive modus.")
+                        break
+                else:
+                    print("[INFO] Je moet opnieuw inloggen. Script pauzeert...")
+                    input("Druk op Enter nadat je opnieuw bent ingelogd in de browser...")
             
             try:
                 success = self.cancel_follow_request(username)
@@ -1360,8 +1396,18 @@ class InstagramCancelRequests:
                     print("[INFO] Voortgang is opgeslagen. Start het script opnieuw om te hervatten.")
                     break
                 # Na reconnect moet je opnieuw inloggen
-                print("[INFO] Je moet opnieuw inloggen. Script pauzeert...")
-                input("Druk op Enter nadat je opnieuw bent ingelogd in de browser...")
+                if self.non_interactive:
+                    if self.login_username and self.login_password:
+                        print("[INFO] Probeer automatisch opnieuw in te loggen na reconnect...")
+                        if not self.login(self.login_username, self.login_password):
+                            print("[ERROR] Automatisch herinloggen na reconnect gefaald. Script stopt.")
+                            break
+                    else:
+                        print("[ERROR] Reconnect vereist login, maar geen credentials in non-interactive modus.")
+                        break
+                else:
+                    print("[INFO] Je moet opnieuw inloggen. Script pauzeert...")
+                    input("Druk op Enter nadat je opnieuw bent ingelogd in de browser...")
                 # Probeer opnieuw
                 try:
                     success = self.cancel_follow_request(username)
@@ -1463,28 +1509,64 @@ def main():
     print("Instagram Pending Follow Requests Annuleren")
     print("="*60)
     
-    # Configuratie
-    username = input("Instagram gebruikersnaam: ")
-    password = input("Instagram wachtwoord: ")
-    delay = input("Vertraging tussen acties in seconden (standaard 3): ").strip()
-    delay = int(delay) if delay.isdigit() else 3
-    
-    bot = InstagramCancelRequests(delay=delay)
+    non_interactive = (
+        os.getenv("NON_INTERACTIVE", "").strip().lower() in ("1", "true", "yes", "y")
+        or not sys.stdin.isatty()
+    )
+
+    def safe_input(prompt, default=""):
+        if non_interactive:
+            return default
+        try:
+            return input(prompt)
+        except EOFError:
+            return default
+
+    # Configuratie (met env fallback voor Docker/non-interactive runs)
+    username = os.getenv("INSTAGRAM_USERNAME", "").strip() or safe_input("Instagram gebruikersnaam: ").strip()
+    password = os.getenv("INSTAGRAM_PASSWORD", "").strip() or safe_input("Instagram wachtwoord: ").strip()
+    delay_raw = os.getenv("BOT_DELAY", "").strip() or safe_input("Vertraging tussen acties in seconden (standaard 3): ").strip()
+    delay = int(delay_raw) if delay_raw.isdigit() else 3
+
+    login_mode_env = os.getenv("LOGIN_MODE", "").strip().lower()
+    if login_mode_env in ("auto", "1"):
+        login_choice = "1"
+    elif login_mode_env in ("manual", "2"):
+        login_choice = "2"
+    elif non_interactive:
+        login_choice = "1"
+    else:
+        login_choice = ""
+
+    if non_interactive and (not username or not password):
+        print("[ERROR] Non-interactive modus vereist INSTAGRAM_USERNAME en INSTAGRAM_PASSWORD.")
+        return
+
+    bot = InstagramCancelRequests(
+        delay=delay,
+        non_interactive=non_interactive,
+        login_username=username,
+        login_password=password
+    )
     
     try:
         bot.setup_driver()
         
         # Vraag gebruiker of ze automatisch of handmatig willen inloggen
-        print("\n[INFO] Kies inlogmethode:")
-        print("  1. Automatisch inloggen (kan falen)")
-        print("  2. Handmatig inloggen (aanbevolen)")
-        login_choice = input("Kies 1 of 2 (standaard: 2): ").strip()
+        if not login_choice:
+            print("\n[INFO] Kies inlogmethode:")
+            print("  1. Automatisch inloggen (kan falen)")
+            print("  2. Handmatig inloggen (aanbevolen)")
+            login_choice = safe_input("Kies 1 of 2 (standaard: 2): ").strip()
         
         if login_choice == "1":
             login_success = bot.login(username, password)
             
             if not login_success:
                 print("\n[WARNING] Automatisch inloggen gefaald.")
+                if non_interactive:
+                    print("[ERROR] Script stopt in non-interactive modus na login-fout.")
+                    return
                 print("[INFO] Schakel over naar handmatig inloggen...")
                 login_choice = "2"  # Fallback naar handmatig
             else:
@@ -1506,7 +1588,8 @@ def main():
                 print("[INFO] Open handmatig: https://www.instagram.com/accounts/login/")
             
             # Wacht tot gebruiker inlogt
-            input("\n[INFO] Druk op Enter nadat je bent ingelogd in de browser (of 'q' om te stoppen): ").strip().lower()
+            if not non_interactive:
+                safe_input("\n[INFO] Druk op Enter nadat je bent ingelogd in de browser (of 'q' om te stoppen): ").strip().lower()
             
             # Check of login succesvol is
             try:
@@ -1516,7 +1599,10 @@ def main():
                     bot.process_all_requests()
                 else:
                     print("[WARNING] Nog op login pagina. Check of je bent ingelogd.")
-                    retry = input("Druk op Enter om door te gaan (of 'q' om te stoppen): ").strip().lower()
+                    if non_interactive:
+                        print("[ERROR] Manual login modus kan niet verder in non-interactive omgeving.")
+                        return
+                    retry = safe_input("Druk op Enter om door te gaan (of 'q' om te stoppen): ").strip().lower()
                     if retry != 'q':
                         bot.process_all_requests()
                     else:

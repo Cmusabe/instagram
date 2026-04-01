@@ -45,6 +45,7 @@
     console.log(`\n✅ ${usernames.length} gebruikersnamen geladen!\n`);
     
     // Helper functies
+    const userIdCache = new Map();
     function getCookie(name) {
         const value = `; ${document.cookie}`;
         const parts = value.split(`; ${name}=`);
@@ -54,6 +55,43 @@
     
     async function sleep(ms) {
         return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    async function getUserIdByUsername(username) {
+        if (userIdCache.has(username)) {
+            return userIdCache.get(username);
+        }
+
+        const profileUrl = `https://www.instagram.com/api/v1/users/web_profile_info/?username=${encodeURIComponent(username)}`;
+
+        try {
+            const response = await fetch(profileUrl, {
+                headers: {
+                    'x-ig-app-id': '936619743392459',
+                    'x-requested-with': 'XMLHttpRequest',
+                },
+                credentials: 'include'
+            });
+
+            if (response.status === 404) {
+                return null;
+            }
+
+            if (!response.ok) {
+                throw new Error(`Lookup failed (${response.status})`);
+            }
+
+            const data = await response.json();
+            const userId = data?.data?.user?.id ?? null;
+
+            if (userId) {
+                userIdCache.set(username, userId);
+            }
+
+            return userId;
+        } catch (error) {
+            throw new Error(`Lookup error: ${error.message}`);
+        }
     }
     
     // Check CSRF token
@@ -139,44 +177,42 @@
     }
     
     // Fallback: probeer eerst API, dan direct profiel bezoeken
-    async function cancelFollowRequest(username) {
+    async function cancelFollowRequest({ username, userId }) {
         try {
+            let resolvedUserId = userId;
+            
+            if (!resolvedUserId) {
+                resolvedUserId = await getUserIdByUsername(username);
+            }
+            
+            if (!resolvedUserId) {
+                throw new Error('Account niet gevonden');
+            }
+            
             // Probeer eerst via API (sneller)
             try {
-                const url = `https://www.instagram.com/api/v1/users/web_profile_info/?username=${encodeURIComponent(username)}`;
-                const response = await fetch(url, {
+                const unfollowUrl = `https://www.instagram.com/web/friendships/${resolvedUserId}/unfollow/`;
+                const unfollowResponse = await fetch(unfollowUrl, {
+                    method: 'POST',
                     headers: {
+                        'content-type': 'application/x-www-form-urlencoded',
+                        'x-csrftoken': csrfToken,
                         'x-ig-app-id': '936619743392459',
                         'x-requested-with': 'XMLHttpRequest',
                     },
-                    credentials: 'include'
+                    credentials: 'include',
+                    body: ''
                 });
                 
-                if (response.ok) {
-                    const data = await response.json();
-                    const userId = data?.data?.user?.id;
-                    
-                    if (userId) {
-                        const unfollowUrl = `https://www.instagram.com/web/friendships/${userId}/unfollow/`;
-                        const unfollowResponse = await fetch(unfollowUrl, {
-                            method: 'POST',
-                            headers: {
-                                'content-type': 'application/x-www-form-urlencoded',
-                                'x-csrftoken': csrfToken,
-                                'x-ig-app-id': '936619743392459',
-                                'x-requested-with': 'XMLHttpRequest',
-                            },
-                            credentials: 'include',
-                            body: ''
-                        });
-                        
-                        if (unfollowResponse.status === 200 || unfollowResponse.status === 204 || unfollowResponse.status === 400) {
-                            return true;
-                        }
-                    }
+                if (unfollowResponse.status === 200 || unfollowResponse.status === 204) {
+                    return true;
+                }
+                
+                if (unfollowResponse.status === 400) {
+                    console.log(`ℹ️  ${username} had geen open verzoek meer.`);
+                    return true;
                 }
             } catch (apiError) {
-                // API faalt, gebruik alternatieve methode
                 console.log(`⚠️ API call failed voor ${username}, gebruik alternatieve methode...`);
             }
             
@@ -203,8 +239,8 @@
         const progress = `${i + 1}/${total}`;
         
         try {
-            // Haal user ID op
-            const userId = await getUserID(username);
+            // Haal user ID op via helper
+            const userId = await getUserIdByUsername(username);
             
             if (!userId) {
                 console.log(`⏭️  [${progress}] SKIP: ${username} (account niet gevonden)`);
@@ -215,7 +251,7 @@
             }
             
             // Annuleer request
-            await cancelFollowRequest(userId);
+            await cancelFollowRequest({ username, userId });
             
             successCount++;
             

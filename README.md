@@ -9,6 +9,7 @@ Tool om automatisch alle pending follow requests op Instagram te annuleren.
 - [Gebruik](#gebruik)
   - [Methode 1: Python Script (Aanbevolen)](#methode-1-python-script-aanbevolen)
   - [Methode 2: Browser Console](#methode-2-browser-console)
+  - [Methode 3: Docker Compose (24/7, auto-restart)](#methode-3-docker-compose-247-auto-restart)
 - [Bestandsstructuur](#bestandsstructuur)
 - [Veiligheid & Waarschuwingen](#veiligheid--waarschuwingen)
 - [Problemen oplossen](#problemen-oplossen)
@@ -125,12 +126,57 @@ Als de console methode niet werkt:
 
 ---
 
+### Methode 3: Docker Compose (24/7, auto-restart)
+
+Gebruik deze methode als je wilt dat de bot blijft draaien zonder open terminal.
+
+**Voordelen:**
+- Draait op de achtergrond met `restart: unless-stopped`
+- Herstart automatisch na crash/reboot
+- Voortgang blijft behouden via `progress.json`
+- Selenium draait in aparte container
+
+**Stappen:**
+
+1. **Maak een env-bestand:**
+   ```bash
+   cp .env.example .env
+   ```
+   Vul in `.env` je gegevens in:
+   - `INSTAGRAM_USERNAME`
+   - `INSTAGRAM_PASSWORD`
+   - `BOT_DELAY` (optioneel, standaard 3)
+
+2. **Start de containers:**
+   ```bash
+   docker compose up -d --build
+   ```
+
+3. **Bekijk logs van de bot:**
+   ```bash
+   docker compose logs -f bot
+   ```
+
+4. **Stoppen (indien nodig):**
+   ```bash
+   docker compose down
+   ```
+
+**Handige URLs:**
+- Selenium status: `http://localhost:4444`
+- Selenium live view (noVNC): `http://localhost:7900`
+
+---
+
 ## Bestandsstructuur
 
 ```
 instagram/
 ├── README.md                          # Dit bestand
 ├── requirements.txt                   # Python dependencies
+├── Dockerfile                         # Container image voor bot
+├── docker-compose.yml                 # Bot + Selenium services
+├── .env.example                       # Voorbeeld environment variabelen
 ├── pending_usernames.txt              # Lijst met gebruikersnamen (één per regel)
 ├── progress.json                      # Voortgang tracking (wordt automatisch aangemaakt)
 │
