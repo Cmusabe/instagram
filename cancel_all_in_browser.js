@@ -112,64 +112,92 @@
     // Functie om direct naar profiel te gaan en request te annuleren (werkt betrouwbaarder)
     async function cancelFollowRequestByVisiting(username) {
         try {
-            // Navigeer naar het profiel
             const profileUrl = `https://www.instagram.com/${username}/`;
-            window.location.href = profileUrl;
-            
-            // Wacht tot pagina geladen is
-            await sleep(3000);
-            
-            // Zoek naar "Requested" knop
-            let requestedButton = null;
-            const possibleSelectors = [
-                'button:contains("Requested")',
-                'button:contains("Verzoek verzonden")',
-                '*[aria-label*="Requested"]',
-                '*[aria-label*="Verzoek"]',
-                'button[type="button"]'
-            ];
-            
-            // Zoek door alle buttons
-            const allButtons = Array.from(document.querySelectorAll('button'));
-            for (const btn of allButtons) {
-                const text = btn.textContent.trim() || btn.innerText.trim() || btn.getAttribute('aria-label') || '';
-                if (text.includes('Requested') || text.includes('Verzoek verzonden') || 
-                    text.includes('Cancel Request') || text.includes('Verzoek annuleren')) {
-                    requestedButton = btn;
-                    break;
-                }
+            // Gebruik popup-tab in plaats van window.location zodat huidige script actief blijft.
+            const popup = window.open(profileUrl, `_insta_cancel_${Date.now()}`);
+            if (!popup) {
+                throw new Error('Popup geblokkeerd door browser');
             }
-            
-            if (!requestedButton) {
-                // Check of er geen "Requested" meer is (mogelijk al geannuleerd)
-                const pageText = document.body.textContent || document.body.innerText;
-                if (!pageText.includes('Requested') && !pageText.includes('Verzoek verzonden')) {
-                    return true; // Geen pending request meer
+
+            try {
+                const timeoutMs = 30000;
+                const start = Date.now();
+
+                // Wacht tot popup volledig geladen is.
+                while (true) {
+                    if (popup.closed) {
+                        throw new Error('Popup gesloten voordat profiel geladen was');
+                    }
+
+                    try {
+                        if (popup.document && popup.document.readyState === 'complete') {
+                            break;
+                        }
+                    } catch (_) {
+                        // Ignore while the page is still navigating.
+                    }
+
+                    if (Date.now() - start > timeoutMs) {
+                        throw new Error('Timeout tijdens laden van profielpagina');
+                    }
+                    await sleep(500);
                 }
-                throw new Error('Requested knop niet gevonden');
-            }
-            
-            // Scroll naar knop en klik
-            requestedButton.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            await sleep(500);
-            
-            // Probeer te klikken
-            requestedButton.click();
-            await sleep(1000);
-            
-            // Check voor bevestigingsmenu
-            const confirmButtons = Array.from(document.querySelectorAll('button')).find(btn => {
-                const text = btn.textContent.trim() || btn.innerText.trim() || '';
-                return text.includes('Cancel Request') || text.includes('Unfollow') || 
-                       text.includes('Annuleer') || text.includes('Ontvolgen');
-            });
-            
-            if (confirmButtons) {
-                confirmButtons.click();
+
+                await sleep(1500);
+
+                const getButtonText = (btn) => (
+                    (btn.textContent || btn.innerText || btn.getAttribute('aria-label') || '').trim()
+                );
+
+                let requestedButton = null;
+                const allButtons = Array.from(popup.document.querySelectorAll('button'));
+                for (const btn of allButtons) {
+                    const text = getButtonText(btn);
+                    if (
+                        text.includes('Requested') ||
+                        text.includes('Verzoek verzonden') ||
+                        text.includes('Cancel Request') ||
+                        text.includes('Verzoek annuleren')
+                    ) {
+                        requestedButton = btn;
+                        break;
+                    }
+                }
+
+                if (!requestedButton) {
+                    const pageText = (popup.document.body && (popup.document.body.textContent || popup.document.body.innerText)) || '';
+                    if (!pageText.includes('Requested') && !pageText.includes('Verzoek verzonden')) {
+                        return true; // Geen pending request zichtbaar
+                    }
+                    throw new Error('Requested knop niet gevonden');
+                }
+
+                requestedButton.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 await sleep(500);
+                requestedButton.click();
+                await sleep(1000);
+
+                const confirmButton = Array.from(popup.document.querySelectorAll('button')).find((btn) => {
+                    const text = getButtonText(btn);
+                    return (
+                        text.includes('Cancel Request') ||
+                        text.includes('Unfollow') ||
+                        text.includes('Annuleer') ||
+                        text.includes('Ontvolgen')
+                    );
+                });
+
+                if (confirmButton) {
+                    confirmButton.click();
+                    await sleep(500);
+                }
+
+                return true;
+            } finally {
+                if (!popup.closed) {
+                    popup.close();
+                }
             }
-            
-            return true;
             
         } catch (error) {
             throw new Error(`Cancel failed: ${error.message}`);
