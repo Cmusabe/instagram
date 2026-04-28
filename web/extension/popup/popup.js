@@ -317,6 +317,8 @@ function setupEventListeners() {
   document.getElementById("btn-back")?.addEventListener("click", () => { usernames = []; showView("upload"); });
 
   // Pause / Resume / Stop
+  document.getElementById("btn-export-progress")?.addEventListener("click", exportCSV);
+
   document.getElementById("btn-pause")?.addEventListener("click", async () => {
     const response = await sendControlAction("pause");
     if (!response.ok) { alert("Pauzeren lukte niet. De taak draait mogelijk niet meer."); return; }
@@ -597,11 +599,49 @@ function setText(id, text) {
 
 // ── Export ──
 
-function exportCSV() {
-  if (results.length === 0) return;
+async function loadStoredResultsForExport() {
+  try {
+    const stored = await chrome.storage.local.get(["ic_results", "ic_done_usernames"]);
+    const auditResults = stored.ic_results || {};
+    const rows = Object.values(auditResults)
+      .filter((row) => row?.username)
+      .sort((a, b) => String(a.ts || "").localeCompare(String(b.ts || "")));
+
+    if (rows.length > 0) return rows;
+
+    const doneRecords = stored.ic_done_usernames || {};
+    return Object.entries(doneRecords).map(([username, record]) => ({
+      username,
+      status: record?.status || "done",
+      reason: record?.reason || "",
+      detail: record?.detail || "Eerder verwerkt door InstaClean",
+      via: "",
+      verified: true,
+      ts: record?.ts ? new Date(record.ts).toISOString() : "",
+    }));
+  } catch {
+    return [];
+  }
+}
+
+async function exportCSV() {
+  const storedRows = await loadStoredResultsForExport();
+  const rows = storedRows.length > 0 ? storedRows : results;
+  if (rows.length === 0) {
+    alert("Nog geen bewijsregels om te exporteren. Laat de tool eerst minimaal één account verwerken.");
+    return;
+  }
   const escapeCsv = (value) => `"${String(value || "").replaceAll("\"", "\"\"")}"`;
-  const csv = "username,status,reason,detail\n" + results
-    .map(r => [r.username, r.status, r.reason || "", r.detail || ""].map(escapeCsv).join(","))
+  const csv = "username,status,reason,detail,via,verified,timestamp\n" + rows
+    .map(r => [
+      r.username,
+      r.status,
+      r.reason || "",
+      r.detail || "",
+      r.via || "",
+      r.verified === false ? "false" : "true",
+      r.ts || "",
+    ].map(escapeCsv).join(","))
     .join("\n");
   const blob = new Blob([csv], { type: "text/csv" });
   const url = URL.createObjectURL(blob);

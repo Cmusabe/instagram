@@ -345,10 +345,21 @@ const InstagramAPI = {
 
     let verification = await this.verifyRequestState(username);
     if (verification.ok && verification.requestedKnown && verification.requested === false && verification.followedByViewer === true) {
-      return { ok: false, reason: "already_following", via: "web_unfollow", verification };
+      return {
+        ok: false,
+        reason: "already_following",
+        via: "web_unfollow",
+        detail: "API geverifieerd: request is weg omdat je dit account al volgt",
+        verification,
+      };
     }
     if (verification.ok && verification.requestedKnown && verification.requested === false) {
-      return { ok: true, via: "web_unfollow", verification };
+      return {
+        ok: true,
+        via: "web_unfollow",
+        detail: "API geverifieerd: Requested is weg",
+        verification,
+      };
     }
 
     const fallback = await this.postCancelRequest(
@@ -360,10 +371,21 @@ const InstagramAPI = {
 
     verification = await this.verifyRequestState(username);
     if (verification.ok && verification.requestedKnown && verification.requested === false && verification.followedByViewer === true) {
-      return { ok: false, reason: "already_following", via: "destroy", verification };
+      return {
+        ok: false,
+        reason: "already_following",
+        via: "destroy",
+        detail: "API fallback geverifieerd: request is weg omdat je dit account al volgt",
+        verification,
+      };
     }
     if (verification.ok && verification.requestedKnown && verification.requested === false) {
-      return { ok: true, via: "destroy", verification };
+      return {
+        ok: true,
+        via: "destroy",
+        detail: "API fallback geverifieerd: Requested is weg",
+        verification,
+      };
     }
 
     if (verification.ok && verification.requestedKnown && verification.requested === true) {

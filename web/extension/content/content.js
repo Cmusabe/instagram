@@ -14,6 +14,7 @@ const BUSY_STATES = new Set(["running", "paused", "stopping"]);
 const DEFAULT_RUN_CONFIG = { delay: 6000, batchSize: 15, batchPause: 90000 };
 const MAX_RATE_LIMIT_WAIT_MS = 300000;
 const DONE_STORE_KEY = "ic_done_usernames";
+const RESULT_STORE_KEY = "ic_results";
 const RECOVERABLE_RUN_STATES = new Set(["running", "paused", "stopping"]);
 
 function isBusy() {
@@ -491,6 +492,41 @@ async function persistDoneResult(username, status, result = {}) {
   }
 }
 
+async function persistAuditResult(username, status, result = {}) {
+  const safeUsername = normalizeUsername(username);
+  if (!safeUsername) return;
+
+  try {
+    const stored = await storageGet(RESULT_STORE_KEY);
+    const results = stored[RESULT_STORE_KEY] || {};
+    results[safeUsername] = {
+      username: safeUsername,
+      status,
+      reason: result?.reason || "",
+      detail: result?.detail || "",
+      via: result?.via || result?.stage || "",
+      verified: status === "success" || status === "skipped",
+      ts: new Date().toISOString(),
+      runStartedAt: activeRunStartedAt,
+    };
+    await storageSet({ [RESULT_STORE_KEY]: results });
+  } catch {
+    // The visible run can continue even if audit persistence fails once.
+  }
+}
+
+function getVerifiedDetail(status, result = {}) {
+  if (result.detail) return result.detail;
+  if (status === "success") return "Geverifieerd: Requested is weg";
+  if (status === "skipped") {
+    if (result.reason === "not_requested") return "Geverifieerd: Instagram meldt geen pending follow request";
+    if (result.reason === "already_following") return "Geverifieerd: je volgt dit account al";
+    if (result.reason === "not_found") return "Geverifieerd: account bestaat niet of is niet beschikbaar";
+    return "Geverifieerd: geen open request meer";
+  }
+  return getFailureDetail(result);
+}
+
 function shouldResumeStoredRun(storedState) {
   return RECOVERABLE_RUN_STATES.has(storedState?.status)
     && Array.isArray(storedState?.usernames)
@@ -755,8 +791,9 @@ async function processUsernames(usernames, config) {
     activeRunAttempted = [...attempted];
 
     const status = success ? "success" : (skippedResult ? "skipped" : "failed");
-    const detail = success ? (result?.detail || "") : getFailureDetail(result);
+    const detail = getVerifiedDetail(status, result);
     await persistDoneResult(username, status, { ...result, detail });
+    await persistAuditResult(username, status, { ...result, detail });
 
     rememberLog({
       username,
