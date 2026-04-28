@@ -13,8 +13,8 @@ export const metadata: Metadata = {
 const FAQS_EN = [
   { q: "Is this safe to use?", a: "The script runs entirely locally in your browser. We never have access to your account or password. You can fully inspect the script before running it." },
   { q: "Do I need to enter my password?", a: "No! You log into Instagram yourself in your browser. The script uses your existing session. We never ask for your password." },
-  { q: "Can my account get blocked?", a: "Instagram may apply rate limiting with frequent automated actions. The script has built-in pauses to prevent this. Increase the delay if you still get blocked. A temporary block usually lasts 30\u201360 minutes." },
-  { q: "How long does it take to cancel everything?", a: "That depends on the number of accounts and your settings. With default settings (2s delay, batches of 100): ~500 accounts per hour. For 4000 accounts it\u2019s ~2\u20133 hours." },
+  { q: "Can my account get blocked?", a: "Instagram may apply cooldowns or rate limiting after many automated actions. InstaClean now uses calmer defaults, smaller batches, and automatic pauses. If Instagram asks for a cooldown, wait 10\u201315 minutes before resuming." },
+  { q: "How long does it take to cancel everything?", a: "That depends on the number of accounts and Instagram's limits. With the recommended setting (30s delay, batches of 5, 5-minute batch pauses), it takes longer but greatly reduces cooldown risk." },
   { q: "Can I stop and continue later?", a: "Yes! The script saves progress in your browser (localStorage). When you run it again, previously processed accounts are skipped." },
   { q: "What if the script stops or crashes?", a: "No problem. Thanks to progress tracking, you can simply paste and run the script again. It continues where it left off." },
   { q: "How do I get my Instagram data export?", a: "Go to Instagram Settings > Accounts Center > Download your information > Select \u2018Followers and following\u2019 > Choose HTML format. Download the file when it\u2019s ready." },

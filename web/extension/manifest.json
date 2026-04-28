@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "InstaClean — Instagram Follow Request Cleaner",
-  "version": "1.1.26",
+  "version": "1.1.27",
   "description": "Annuleer al je pending Instagram follow requests in één klik. Gratis, veilig, en 100% lokaal.",
   "permissions": ["activeTab", "storage"],
   "host_permissions": [

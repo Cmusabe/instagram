@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { Globe, ArrowRight, CheckCircle, AlertTriangle, Loader2, Pause, Square, Zap, Clock } from "lucide-react";
 
-const MIN_EXTENSION_VERSION = "1.1.26";
+const MIN_EXTENSION_VERSION = "1.1.27";
 
 interface ExtensionState {
   installed: boolean;

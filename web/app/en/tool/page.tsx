@@ -21,9 +21,9 @@ export default function ToolPageEN() {
   const [usernames, setUsernames] = useState<string[]>([]);
   const [invalidNames, setInvalidNames] = useState<{ name: string; reason: string }[]>([]);
   const [duplicatesRemoved, setDuplicatesRemoved] = useState(0);
-  const [delay, setDelay] = useState(2);
-  const [batchSize, setBatchSize] = useState(100);
-  const [batchPause, setBatchPause] = useState(30);
+  const [delay, setDelay] = useState(30);
+  const [batchSize, setBatchSize] = useState(5);
+  const [batchPause, setBatchPause] = useState(300);
   const [generatedScript, setGeneratedScript] = useState<string | null>(null);
   const [showLive, setShowLive] = useState(false);
   const [results, setResults] = useState<{ cancelled: number; skipped: number; failed: number; total: number; durationMs: number } | null>(null);
@@ -161,7 +161,7 @@ export default function ToolPageEN() {
 
             <div className="rounded-xl p-4" style={{ background: "rgba(245,158,11,0.03)", border: "1px solid rgba(245,158,11,0.08)" }}>
               <p className="text-xs" style={{ color: "rgba(245,158,11,0.7)" }}>
-                <span className="font-semibold">Note:</span> This script uses Instagram&apos;s internal API. It automatically pauses on rate limiting. Keep the Instagram browser tab open.
+                <span className="font-semibold">Note:</span> Instagram can enforce cooldowns after many actions. InstaClean now uses calmer defaults and automatically pauses on rate limiting. Keep the Instagram browser tab open.
               </p>
             </div>
           </div>

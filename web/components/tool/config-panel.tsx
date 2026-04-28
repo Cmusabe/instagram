@@ -84,9 +84,9 @@ export function ConfigPanel({ delay, batchSize, batchPause, onDelayChange, onBat
       </div>
 
       {/* Sliders */}
-      <Slider icon={<Timer size={14} />} label="Vertraging" value={delay} unit="s" min={3} max={20} step={1} onChange={onDelayChange} leftLabel="Snel (risico)" rightLabel="Veilig" />
-      <Slider icon={<Layers size={14} />} label="Batch grootte" value={batchSize} unit="" min={5} max={50} step={5} onChange={onBatchSizeChange} leftLabel="Klein" rightLabel="Groot" />
-      <Slider icon={<Pause size={14} />} label="Batch pauze" value={batchPause} unit="s" min={30} max={300} step={30} onChange={onBatchPauseChange} leftLabel="Kort" rightLabel="Lang" />
+      <Slider icon={<Timer size={14} />} label="Vertraging" value={delay} unit="s" min={15} max={60} step={5} onChange={onDelayChange} leftLabel="Snel" rightLabel="Veilig" />
+      <Slider icon={<Layers size={14} />} label="Batch grootte" value={batchSize} unit="" min={3} max={10} step={1} onChange={onBatchSizeChange} leftLabel="Klein" rightLabel="Groter" />
+      <Slider icon={<Pause size={14} />} label="Batch pauze" value={batchPause} unit="s" min={180} max={900} step={60} onChange={onBatchPauseChange} leftLabel="3 min" rightLabel="15 min" />
     </div>
   );
 }

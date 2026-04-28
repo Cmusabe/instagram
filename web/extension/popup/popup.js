@@ -1,9 +1,9 @@
 // InstaClean Extension Popup
 
 const PRESETS = {
-  safe: { delay: 9000, batchSize: 10, batchPause: 120000 },
-  balanced: { delay: 6000, batchSize: 15, batchPause: 90000 },
-  fast: { delay: 4000, batchSize: 25, batchPause: 60000 },
+  safe: { delay: 45000, batchSize: 3, batchPause: 600000 },
+  balanced: { delay: 30000, batchSize: 5, batchPause: 300000 },
+  fast: { delay: 15000, batchSize: 8, batchPause: 180000 },
 };
 
 let usernames = [];

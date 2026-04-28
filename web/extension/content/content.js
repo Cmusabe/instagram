@@ -11,8 +11,10 @@ let heartbeatTimer = null;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms + Math.random() * 300));
 const BUSY_STATES = new Set(["running", "paused", "stopping"]);
-const DEFAULT_RUN_CONFIG = { delay: 6000, batchSize: 15, batchPause: 90000 };
-const MAX_RATE_LIMIT_WAIT_MS = 300000;
+const DEFAULT_RUN_CONFIG = { delay: 30000, batchSize: 5, batchPause: 300000 };
+const MAX_ACTION_DELAY_MS = 120000;
+const MAX_BATCH_PAUSE_MS = 900000;
+const MAX_RATE_LIMIT_WAIT_MS = 900000;
 const DONE_STORE_KEY = "ic_done_usernames";
 const RESULT_STORE_KEY = "ic_results";
 const RECOVERABLE_RUN_STATES = new Set(["running", "paused", "stopping"]);
@@ -399,9 +401,9 @@ function clampNumber(value, min, max, fallback) {
 
 function normalizeRunConfig(config = {}) {
   return {
-    delay: clampNumber(config.delay, 5000, 30000, DEFAULT_RUN_CONFIG.delay),
-    batchSize: Math.round(clampNumber(config.batchSize, 5, 25, DEFAULT_RUN_CONFIG.batchSize)),
-    batchPause: clampNumber(config.batchPause, 60000, 180000, DEFAULT_RUN_CONFIG.batchPause),
+    delay: clampNumber(config.delay, 15000, MAX_ACTION_DELAY_MS, DEFAULT_RUN_CONFIG.delay),
+    batchSize: Math.round(clampNumber(config.batchSize, 3, 10, DEFAULT_RUN_CONFIG.batchSize)),
+    batchPause: clampNumber(config.batchPause, 180000, MAX_BATCH_PAUSE_MS, DEFAULT_RUN_CONFIG.batchPause),
   };
 }
 
@@ -886,7 +888,7 @@ async function processUsernames(usernames, config) {
         phase: "batch_pause",
         nextWakeAt,
       });
-      const shouldContinue = await waitInterruptibly(settings.batchPause, { maxMs: 180000 });
+      const shouldContinue = await waitInterruptibly(settings.batchPause, { maxMs: MAX_BATCH_PAUSE_MS });
       if (!shouldContinue) break;
     }
 
@@ -945,7 +947,7 @@ async function processUsernames(usernames, config) {
 
       const shouldContinue = await recordFinalResult(username, finalResult, done, eta, speed);
       if (!shouldContinue) break;
-      if (!(await waitInterruptibly(currentDelay, { maxMs: 30000 }))) break;
+      if (!(await waitInterruptibly(currentDelay, { maxMs: MAX_ACTION_DELAY_MS }))) break;
       continue;
     }
 
@@ -963,7 +965,7 @@ async function processUsernames(usernames, config) {
 
       const shouldContinue = await recordFinalResult(username, finalResult, done, eta, speed);
       if (!shouldContinue) break;
-      if (!(await waitInterruptibly(currentDelay, { maxMs: 30000 }))) break;
+      if (!(await waitInterruptibly(currentDelay, { maxMs: MAX_ACTION_DELAY_MS }))) break;
       continue;
     }
 
@@ -1001,7 +1003,7 @@ async function processUsernames(usernames, config) {
       currentDelay = Math.max(settings.delay, currentDelay * 0.8);
     }
 
-    if (!(await waitInterruptibly(currentDelay, { maxMs: 30000 }))) break;
+    if (!(await waitInterruptibly(currentDelay, { maxMs: MAX_ACTION_DELAY_MS }))) break;
   }
 
   // Done
