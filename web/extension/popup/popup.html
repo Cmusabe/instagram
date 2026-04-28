@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=380">
+  <link rel="stylesheet" href="popup.css">
+  <title>InstaClean</title>
+</head>
+<body>
+  <div id="app">
+    <!-- Header -->
+    <div class="header">
+      <div class="logo">Insta<span class="logo-accent">Clean</span></div>
+      <div class="version" id="app-version">v...</div>
+    </div>
+
+    <!-- Views -->
+    <div id="view-loading" class="view active">
+      <div class="center-message">
+        <div class="spinner"></div>
+        <p class="muted">Verbinden...</p>
+      </div>
+    </div>
+
+    <div id="view-not-instagram" class="view">
+      <div class="center-message">
+        <div class="icon-circle icon-warning">⚠️</div>
+        <h2>Ga naar Instagram</h2>
+        <p class="muted">Open instagram.com en klik opnieuw op InstaClean.</p>
+        <button id="btn-open-ig" class="btn-primary">Open Instagram</button>
+      </div>
+    </div>
+
+    <div id="view-not-logged-in" class="view">
+      <div class="center-message">
+        <div class="icon-circle icon-warning">🔒</div>
+        <h2>Log in op Instagram</h2>
+        <p class="muted">Je moet ingelogd zijn om follow requests te annuleren.</p>
+      </div>
+    </div>
+
+    <div id="view-upload" class="view">
+      <!-- Tabs -->
+      <div class="tabs">
+        <button class="tab active" data-tab="file">Bestand uploaden</button>
+        <button class="tab" data-tab="paste">Handmatig invoeren</button>
+      </div>
+
+      <div id="tab-file" class="tab-content active">
+        <div id="dropzone" class="dropzone">
+          <div class="dropzone-icon">📁</div>
+          <p>Sleep je Instagram export hierheen</p>
+          <span class="muted small">HTML, JSON of TXT — klik of sleep</span>
+          <input type="file" id="file-input" accept=".html,.htm,.json,.txt,.csv" hidden>
+        </div>
+        <p class="muted small center">Instagram → Instellingen → Je informatie downloaden</p>
+      </div>
+
+      <div id="tab-paste" class="tab-content">
+        <p class="muted small">Plak usernames hieronder, één per regel (zonder @):</p>
+        <textarea id="paste-input" placeholder="travel_adventures&#10;photo_daily&#10;fitness_queen&#10;amsterdam_life" rows="6"></textarea>
+        <button id="btn-process-paste" class="btn-primary" disabled>Verwerk usernames</button>
+      </div>
+    </div>
+
+    <div id="view-config" class="view">
+      <div class="username-count">
+        <span id="count-number" class="count-badge">0</span>
+        <div>
+          <strong id="count-label">0 usernames geladen</strong>
+          <span class="muted small">Klaar om te verwerken</span>
+        </div>
+      </div>
+
+      <div class="section-label">Snelheid</div>
+      <div class="presets">
+        <button class="preset" data-preset="safe">
+          <span class="preset-icon">🛡️</span>
+          <span class="preset-name">Veilig</span>
+          <span class="preset-desc">Langzaam, minimaal risico</span>
+        </button>
+        <button class="preset active" data-preset="balanced">
+          <span class="preset-icon">⚖️</span>
+          <span class="preset-name">Gebalanceerd</span>
+          <span class="preset-desc">Aanbevolen</span>
+        </button>
+        <button class="preset" data-preset="fast">
+          <span class="preset-icon">⚡</span>
+          <span class="preset-name">Snel</span>
+          <span class="preset-desc">Sneller, meer risico</span>
+        </button>
+      </div>
+
+      <div class="estimate" id="time-estimate">Geschatte tijd: ~0 minuten</div>
+
+      <button id="btn-start" class="btn-primary btn-large">▶ Start annuleren</button>
+      <button id="btn-back" class="btn-ghost small">← Terug naar upload</button>
+    </div>
+
+    <div id="view-progress" class="view">
+      <div class="progress-header">
+        <div id="progress-status" class="status-dot running"></div>
+        <span id="progress-label">Bezig met annuleren...</span>
+        <span id="progress-eta" class="muted small"></span>
+      </div>
+
+      <div class="progress-bar-container">
+        <div id="progress-bar" class="progress-bar" style="width: 0%"></div>
+      </div>
+      <div class="progress-numbers">
+        <span id="progress-count">0 / 0</span>
+        <span id="progress-pct" class="muted">0%</span>
+      </div>
+
+      <div class="live-status-card">
+        <div class="live-row">
+          <span>Fase</span>
+          <strong id="progress-phase">Wachten...</strong>
+        </div>
+        <div class="live-row">
+          <span>Nu</span>
+          <strong id="progress-current">Nog geen account</strong>
+        </div>
+        <div class="live-row">
+          <span>Laatste update</span>
+          <strong id="progress-updated">net gestart</strong>
+        </div>
+      </div>
+
+      <div class="stats-grid">
+        <div class="stat"><span id="stat-cancelled" class="stat-value success">0</span><span class="stat-label">Geannuleerd</span></div>
+        <div class="stat"><span id="stat-skipped" class="stat-value muted">0</span><span class="stat-label">Overgeslagen</span></div>
+        <div class="stat"><span id="stat-failed" class="stat-value error">0</span><span class="stat-label">Mislukt</span></div>
+      </div>
+
+      <div id="rate-limit-banner" class="banner warning" hidden>
+        <span id="rate-limit-msg">Rate limited — wachten...</span>
+      </div>
+
+      <div class="log-container">
+        <div id="log" class="log"></div>
+      </div>
+
+      <div class="progress-actions">
+        <button id="btn-pause" class="btn-ghost">⏸ Pauzeer</button>
+        <button id="btn-resume" class="btn-ghost" hidden>▶ Hervat</button>
+        <button id="btn-stop" class="btn-ghost btn-danger">⏹ Stop</button>
+        <button id="btn-reset-progress" class="btn-ghost btn-danger" hidden>Reset</button>
+      </div>
+    </div>
+
+    <div id="view-done" class="view">
+      <div class="center-message">
+        <div class="icon-circle icon-success">✓</div>
+        <h2>Klaar!</h2>
+        <p class="muted" id="done-summary"></p>
+      </div>
+
+      <div class="stats-grid">
+        <div class="stat"><span id="done-cancelled" class="stat-value success">0</span><span class="stat-label">Geannuleerd</span></div>
+        <div class="stat"><span id="done-skipped" class="stat-value muted">0</span><span class="stat-label">Overgeslagen</span></div>
+        <div class="stat"><span id="done-failed" class="stat-value error">0</span><span class="stat-label">Mislukt</span></div>
+      </div>
+
+      <div class="done-actions">
+        <button id="btn-export" class="btn-ghost">📥 Exporteer CSV</button>
+        <button id="btn-restart" class="btn-primary">Opnieuw beginnen</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="../utils/parser.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

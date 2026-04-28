@@ -32,6 +32,7 @@ failed_cancellations.txt
 # IDE
 .vscode/
 .idea/
+.claude/
 *.swp
 *.swo
 *~
@@ -46,3 +47,7 @@ Thumbs.db
 # Secrets
 .env
 
+# Generated web/extension artifacts
+web/.claude/
+web/extension/icons/.store-gen/
+web/instaclean-extension*.zip
