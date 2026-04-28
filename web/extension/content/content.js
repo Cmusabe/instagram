@@ -7,11 +7,14 @@ let activeRunUsernames = [];
 let activeRunConfig = null;
 let activeRunStartedAt = null;
 let activeRunAttempted = [];
+let heartbeatTimer = null;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms + Math.random() * 300));
 const BUSY_STATES = new Set(["running", "paused", "stopping"]);
 const DEFAULT_RUN_CONFIG = { delay: 6000, batchSize: 15, batchPause: 90000 };
 const MAX_RATE_LIMIT_WAIT_MS = 300000;
+const DONE_STORE_KEY = "ic_done_usernames";
+const RECOVERABLE_RUN_STATES = new Set(["running", "paused", "stopping"]);
 
 function isBusy() {
   return BUSY_STATES.has(state);
@@ -76,6 +79,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     activeRunConfig = null;
     activeRunStartedAt = null;
     activeRunAttempted = [];
+    stopHeartbeat();
     wakeCurrentWait();
     chrome.storage.local.remove("ic_state", () => sendResponse({ ok: true }));
     return true;
@@ -103,6 +107,7 @@ function handleUnexpectedRunError(error) {
     detail: `Interne fout: ${detail}`,
   });
   state = "idle";
+  stopHeartbeat();
   chrome.storage.local.get("ic_state", (res) => {
     const current = res.ic_state || {};
     chrome.storage.local.set({
@@ -411,6 +416,143 @@ function getSafeUsernames(usernames) {
     });
 }
 
+function normalizeUsername(username) {
+  return String(username || "").trim().replace(/^@+/, "").replace(/\/+$/, "").toLowerCase();
+}
+
+function storageGet(keys) {
+  return new Promise((resolve) => chrome.storage.local.get(keys, resolve));
+}
+
+function storageSet(data) {
+  return new Promise((resolve) => chrome.storage.local.set(data, resolve));
+}
+
+function isDoneRecordStatus(status) {
+  return status === "success" || status === "skipped" || status === "done";
+}
+
+async function loadDoneRecords(storedState = null) {
+  const stored = await storageGet(DONE_STORE_KEY);
+  const rawRecords = stored[DONE_STORE_KEY] || {};
+  const records = {};
+
+  for (const [rawUsername, rawRecord] of Object.entries(rawRecords)) {
+    const username = normalizeUsername(rawUsername);
+    if (!username) continue;
+    const record = rawRecord && typeof rawRecord === "object" ? rawRecord : {};
+    const status = isDoneRecordStatus(record.status) ? record.status : "done";
+    records[username] = {
+      status,
+      reason: record.reason || "",
+      detail: record.detail || "",
+      ts: record.ts || Date.now(),
+    };
+  }
+
+  // Backward compatibility for progress saved before the durable done store existed.
+  for (const rawUsername of storedState?.completed || []) {
+    const username = normalizeUsername(rawUsername);
+    if (!username || records[username]) continue;
+    records[username] = {
+      status: "done",
+      reason: "previous_progress",
+      detail: "Eerder verwerkt door InstaClean",
+      ts: Date.parse(storedState?.updatedAt || storedState?.startedAt || "") || Date.now(),
+    };
+  }
+
+  return records;
+}
+
+function countDoneRecords(records, statuses) {
+  const wanted = new Set(statuses);
+  return Object.values(records).filter((record) => wanted.has(record.status)).length;
+}
+
+async function persistDoneResult(username, status, result = {}) {
+  if (status !== "success" && status !== "skipped") return;
+
+  const safeUsername = normalizeUsername(username);
+  if (!safeUsername) return;
+
+  try {
+    const stored = await storageGet(DONE_STORE_KEY);
+    const records = stored[DONE_STORE_KEY] || {};
+    records[safeUsername] = {
+      status,
+      reason: result?.reason || "",
+      detail: result?.detail || "",
+      ts: Date.now(),
+    };
+    await storageSet({ [DONE_STORE_KEY]: records });
+  } catch {
+    // Progress in ic_state still gets saved; the durable index is best effort.
+  }
+}
+
+function shouldResumeStoredRun(storedState) {
+  return RECOVERABLE_RUN_STATES.has(storedState?.status)
+    && Array.isArray(storedState?.usernames)
+    && storedState.usernames.length > 0;
+}
+
+function getStoredRunProcessed(storedState, safeUsernames, completed) {
+  if (!shouldResumeStoredRun(storedState)) return new Set();
+
+  const rawProcessed = Array.isArray(storedState.runProcessed)
+    ? storedState.runProcessed
+    : Array.isArray(storedState.attempted)
+      ? storedState.attempted
+      : [];
+  const safeSet = new Set(safeUsernames);
+  const processed = new Set(
+    rawProcessed
+      .map(normalizeUsername)
+      .filter((username) => username && safeSet.has(username))
+  );
+
+  const stats = storedState.stats || {};
+  const countedResults = (Number(stats.cancelled) || 0) + (Number(stats.skipped) || 0) + (Number(stats.failed) || 0);
+
+  // Older builds sometimes saved hundreds of opened profiles as "attempted" without
+  // recording final results. Treat that as stale/corrupt so we do not skip real work.
+  if (countedResults > 0 && processed.size > countedResults + 5) {
+    return new Set([...processed].filter((username) => completed.has(username)));
+  }
+
+  return processed;
+}
+
+function startHeartbeat() {
+  stopHeartbeat();
+  heartbeatTimer = setInterval(() => {
+    if (!isBusy()) return;
+    chrome.storage.local.get("ic_state", (res) => {
+      const current = res.ic_state;
+      if (!current) return;
+      const updatedAt = new Date().toISOString();
+      const nextState = { ...current, status: state === "paused" ? "paused" : state === "stopping" ? "stopping" : "running", updatedAt };
+      chrome.storage.local.set({ ic_state: nextState });
+      send({
+        action: "heartbeat",
+        current: nextState.current,
+        total: nextState.total,
+        username: nextState.currentUsername,
+        phase: nextState.phase,
+        status: nextState.status,
+        updatedAt,
+      });
+    });
+  }, 5000);
+}
+
+function stopHeartbeat() {
+  if (!heartbeatTimer) return;
+  clearInterval(heartbeatTimer);
+  heartbeatTimer = null;
+}
+
 function wakeCurrentWait() {
   if (!waitWakeResolver) return;
   const resolve = waitWakeResolver;
@@ -464,28 +606,36 @@ async function waitInterruptibly(ms, options = {}) {
 async function processUsernames(usernames, config) {
   const settings = normalizeRunConfig(config);
   const safeUsernames = getSafeUsernames(usernames);
+  const safeUsernameSet = new Set(safeUsernames);
   // Load progress from storage
   const stored = await new Promise(r => chrome.storage.local.get("ic_state", res => r(res.ic_state)));
-  const completed = new Set(stored?.completed || []);
-  const attempted = new Set(stored?.attempted || stored?.completed || []);
-  const remaining = safeUsernames.filter(u => !attempted.has(u));
-  recentLog = Array.isArray(stored?.log) ? stored.log.slice(0, 50) : [];
+  const allDoneRecords = await loadDoneRecords(stored);
+  const doneRecords = Object.fromEntries(
+    Object.entries(allDoneRecords).filter(([username]) => safeUsernameSet.has(username))
+  );
+  const completed = new Set(Object.keys(doneRecords));
+  const attempted = getStoredRunProcessed(stored, safeUsernames, completed);
+  const remaining = safeUsernames.filter(u => !completed.has(u) && !attempted.has(u));
+  const resumeStoredRun = shouldResumeStoredRun(stored);
+  recentLog = resumeStoredRun && Array.isArray(stored?.log) ? stored.log.slice(0, 50) : [];
   activeRunUsernames = safeUsernames;
   activeRunConfig = settings;
-  activeRunStartedAt = stored?.startedAt || new Date().toISOString();
+  activeRunStartedAt = resumeStoredRun ? (stored?.startedAt || new Date().toISOString()) : new Date().toISOString();
   activeRunAttempted = [...attempted];
 
   const storedStats = stored?.stats || {};
-  let cancelled = Math.max(0, Number(storedStats.cancelled) || 0);
-  let skipped = Math.max(0, Number(storedStats.skipped) || 0);
-  let failed = Math.max(0, Number(storedStats.failed) || 0);
+  const knownCancelled = countDoneRecords(doneRecords, ["success"]);
+  const knownSkipped = countDoneRecords(doneRecords, ["skipped", "done"]);
+  let cancelled = Math.max(knownCancelled, resumeStoredRun ? (Number(storedStats.cancelled) || 0) : 0);
+  let skipped = Math.max(knownSkipped, resumeStoredRun ? (Number(storedStats.skipped) || 0) : 0);
+  let failed = resumeStoredRun ? Math.max(0, Number(storedStats.failed) || 0) : 0;
   let rateLimitCount = 0;
   let consecutiveHardFailures = 0;
   let currentDelay = settings.delay;
   let profileApiCooldownUntil = 0;
   const startTime = Date.now();
   const totalCount = safeUsernames.length;
-  const processedCount = () => Math.max(attempted.size, completed.size, cancelled + skipped + failed);
+  const processedCount = () => new Set([...completed, ...attempted]).size;
 
   const pauseForHardFailures = async (result) => {
     state = "paused";
@@ -606,6 +756,7 @@ async function processUsernames(usernames, config) {
 
     const status = success ? "success" : (skippedResult ? "skipped" : "failed");
     const detail = success ? (result?.detail || "") : getFailureDetail(result);
+    await persistDoneResult(username, status, { ...result, detail });
 
     rememberLog({
       username,
@@ -653,8 +804,15 @@ async function processUsernames(usernames, config) {
   }
 
   if (remaining.length === 0) {
+    saveProgress(completed, { cancelled, skipped, failed }, "completed", {
+      current: processedCount(),
+      total: totalCount,
+      currentUsername: "",
+      phase: "completed",
+    });
     send({ action: "already_done", previouslyCompleted: completed.size, total: totalCount });
     state = "idle";
+    stopHeartbeat();
     return;
   }
 
@@ -664,6 +822,7 @@ async function processUsernames(usernames, config) {
     total: totalCount,
     currentUsername: "",
   });
+  startHeartbeat();
 
   for (let i = 0; i < remaining.length; i++) {
     // Pause loop
@@ -819,6 +978,7 @@ async function processUsernames(usernames, config) {
     currentUsername: "",
     phase: finalStatus,
   });
+  stopHeartbeat();
 
   // Save history
   const history = await new Promise(r => chrome.storage.local.get("ic_history", res => r(res.ic_history || [])));
@@ -851,6 +1011,7 @@ function saveProgress(completed, stats, statusOverride = null, meta = {}) {
       startedAt: activeRunStartedAt,
       completed: [...completed],
       attempted: activeRunAttempted,
+      runProcessed: activeRunAttempted,
       stats: storedStats,
       current,
       total,

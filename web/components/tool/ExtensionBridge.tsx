@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { Globe, ArrowRight, CheckCircle, AlertTriangle, Loader2, Pause, Square, Zap, Clock } from "lucide-react";
 
-const MIN_EXTENSION_VERSION = "1.1.24";
+const MIN_EXTENSION_VERSION = "1.1.25";
 
 interface ExtensionState {
   installed: boolean;
@@ -28,6 +28,8 @@ interface ProgressData {
   durationMs?: number;
   previouslyCompleted?: number;
   stopped?: boolean;
+  phase?: string;
+  updatedAt?: string;
 }
 
 interface RuntimeResponse {
@@ -36,6 +38,7 @@ interface RuntimeResponse {
     current?: number;
     total?: number;
     currentUsername?: string;
+    phase?: string;
     updatedAt?: string;
     stats?: { cancelled?: number; skipped?: number; failed?: number };
     log?: { username?: string; status?: string; detail?: string; text?: string }[];
@@ -82,7 +85,8 @@ export function ExtensionBridge({ usernames, config }: {
     const stateSnapshot = runtime.state;
     const active = stateSnapshot?.status && ["running", "paused", "stopping"].includes(stateSnapshot.status)
       && ["running", "paused", "stopping"].includes(runtime.contentState || "");
-    if (!active) return false;
+    const terminal = stateSnapshot?.status && ["completed", "stopped"].includes(stateSnapshot.status);
+    if (!active && !terminal) return false;
 
     const stats = stateSnapshot?.stats || {};
     setProgress({
@@ -94,9 +98,11 @@ export function ExtensionBridge({ usernames, config }: {
       failed: stats.failed || 0,
       username: stateSnapshot?.currentUsername,
       status: stateSnapshot?.status,
+      phase: stateSnapshot?.phase,
+      updatedAt: stateSnapshot?.updatedAt,
     });
     setLog((stateSnapshot?.log || []).slice(0, 30).map(formatLogEntry));
-    setStatus(runtime.contentState === "paused" || stateSnapshot?.status === "paused" ? "paused" : "running");
+    setStatus(terminal ? "done" : runtime.contentState === "paused" || stateSnapshot?.status === "paused" ? "paused" : "running");
     return true;
   }, [formatLogEntry]);
 
@@ -116,7 +122,10 @@ export function ExtensionBridge({ usernames, config }: {
   }, []);
 
   const handleExtensionMessage = useCallback((msg: ProgressData) => {
-    setProgress(msg);
+    setProgress(prev => {
+      const clean = Object.fromEntries(Object.entries(msg).filter(([, value]) => value !== undefined)) as ProgressData;
+      return { ...(prev || { action: clean.action }), ...clean };
+    });
 
     if (msg.action === "progress") {
       setStatus("running");
@@ -131,6 +140,9 @@ export function ExtensionBridge({ usernames, config }: {
       if (msg.username) {
         setLog(prev => [`👁 @${msg.username} — live profiel geopend`, ...prev].slice(0, 30));
       }
+    }
+    if (msg.action === "heartbeat") {
+      setStatus(msg.status === "paused" ? "paused" : "running");
     }
     if (msg.action === "started") setStatus("running");
     if (msg.action === "done") setStatus("done");
@@ -218,6 +230,10 @@ export function ExtensionBridge({ usernames, config }: {
   useEffect(() => {
     if (!ext.supported) return;
     sendToExtension("get_state");
+    const poller = window.setInterval(() => {
+      sendToExtension("get_state");
+    }, 5000);
+    return () => window.clearInterval(poller);
   }, [ext.supported, sendToExtension]);
 
   const handleStart = () => {

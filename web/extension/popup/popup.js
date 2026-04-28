@@ -518,6 +518,21 @@ chrome.runtime.onMessage.addListener((msg) => {
     addLogEntry({ status: "live", text: `LIVE @${msg.username} — profiel geopend` });
   }
 
+  if (msg.action === "heartbeat") {
+    if (msg.total > 0 && typeof msg.current === "number") {
+      const pct = Math.round((msg.current / msg.total) * 100);
+      const bar = document.getElementById("progress-bar");
+      if (bar) bar.style.width = `${pct}%`;
+      setText("progress-count", `${msg.current} / ${msg.total}`);
+      setText("progress-pct", `${pct}%`);
+    }
+    setLiveStatus({
+      phase: getPhaseLabel(msg.phase, msg.status === "paused" ? "Gepauzeerd" : "Worker actief"),
+      current: msg.username ? `@${msg.username}` : "Wacht op volgende account",
+      updatedAt: msg.updatedAt || Date.now(),
+    });
+  }
+
   if (msg.action === "batch_pause") {
     setText("progress-label", `Batch pauze (${Math.round(msg.pauseMs / 1000)}s)...`);
     setLiveStatus({
@@ -528,14 +543,16 @@ chrome.runtime.onMessage.addListener((msg) => {
   }
 
   if (msg.action === "started") {
+    const initial = msg.previouslyCompleted || 0;
+    const pct = msg.total > 0 ? Math.round((initial / msg.total) * 100) : 0;
     setText("progress-label", `Bezig met annuleren (${msg.total})...`);
-    setText("progress-count", `0 / ${msg.total}`);
-    setText("progress-pct", "0%");
-    setText("stat-cancelled", "0");
+    setText("progress-count", `${initial} / ${msg.total}`);
+    setText("progress-pct", `${pct}%`);
+    setText("stat-cancelled", initial > 0 ? "laden..." : "0");
     setText("stat-skipped", "0");
     setText("stat-failed", "0");
     const bar = document.getElementById("progress-bar");
-    if (bar) bar.style.width = "0%";
+    if (bar) bar.style.width = `${pct}%`;
     const pauseBtn = document.getElementById("btn-pause");
     const resumeBtn = document.getElementById("btn-resume");
     if (pauseBtn) pauseBtn.hidden = false;

@@ -634,7 +634,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return handleWebsiteCommand(msg, sender, sendResponse);
   }
 
-  if (sender?.tab?.id && sender.tab.url?.includes("instagram.com") && ["started", "progress", "rate_limit", "rate_limit_pause", "done", "already_done", "error", "batch_pause", "ui_fallback_live"].includes(msg.action)) {
+  if (sender?.tab?.id && sender.tab.url?.includes("instagram.com") && ["started", "progress", "heartbeat", "rate_limit", "rate_limit_pause", "done", "already_done", "error", "batch_pause", "ui_fallback_live"].includes(msg.action)) {
     const senderTab = { id: sender.tab.id, url: sender.tab.url };
     loadTabRoles().then(() => {
       if (senderTab.id !== liveFallbackTabId && isSafeRunnerTab(senderTab)) {
@@ -655,6 +655,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     chrome.action.setBadgeBackgroundColor({ color: "#8B5CF6" });
 
     // Forward to website tab if connected
+    forwardToWebsite(msg);
+  }
+
+  if (msg.action === "heartbeat") {
     forwardToWebsite(msg);
   }
 
